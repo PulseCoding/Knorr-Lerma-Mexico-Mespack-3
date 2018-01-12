@@ -25,7 +25,9 @@ var Fillerct = null,
     FillerONS = false,
     FillertimeStop = 60, //NOTE: Timestop
     FillerWorktime = 0.99, //NOTE: Intervalo de tiempo en minutos para actualizar el log
-    FillerflagRunning = false;
+    FillerflagRunning = false,
+    PreInFiller=null,
+    FillerdeltaRejected=null;
 var Xrayct = null,
     Xrayresults = null,
     CntInXray = null,
@@ -39,27 +41,67 @@ var Xrayct = null,
     XrayspeedTemp = 0,
     XrayflagPrint = 0,
     XraysecStop = 0,
+    XraydeltaRejected = null,
     XrayONS = false,
     XraytimeStop = 60, //NOTE: Timestop
     XrayWorktime = 0.99, //NOTE: Intervalo de tiempo en minutos para actualizar el log
-    XrayflagRunning = false;
-var Checkweigherct = null,
-    Checkweigherresults = null,
-    CntInCheckweigher = null,
-    CntOutCheckweigher = null,
-    Checkweigheractual = 0,
-    Checkweighertime = 0,
-    Checkweighersec = 0,
-    CheckweigherflagStopped = false,
-    Checkweigherstate = 0,
-    Checkweigherspeed = 0,
-    CheckweigherspeedTemp = 0,
-    CheckweigherflagPrint = 0,
-    CheckweighersecStop = 0,
-    CheckweigherONS = false,
-    CheckweighertimeStop = 60, //NOTE: Timestop
-    CheckweigherWorktime = 0.99, //NOTE: Intervalo de tiempo en minutos para actualizar el log
-    CheckweigherflagRunning = false;
+    XrayflagRunning = false,
+    XrayRejectFlag = false,
+    XrayReject,
+    XrayVerify = (function(){
+     try{
+       XrayReject = fs.readFileSync('XrayRejected.json')
+       if(XrayReject.toString().indexOf('}') > 0 && XrayReject.toString().indexOf('{\"rejected\":') != -1){
+         XrayReject = JSON.parse(XrayReject)
+       }else{
+         throw 12121212
+       }
+     }catch(err){
+       if(err.code == 'ENOENT' || err == 12121212){
+         fs.writeFileSync('XrayRejected.json','{"rejected":0}') //NOTE: Change the object to what it usually is.
+         XrayReject = {
+           rejected : 0
+         }
+       }
+     }
+   })();
+   var Checkweigherct = null,
+       Checkweigherresults = null,
+       CntInCheckweigher = null,
+       CntOutCheckweigher = null,
+       Checkweigheractual = 0,
+       Checkweighertime = 0,
+       Checkweighersec = 0,
+       CheckweigherflagStopped = false,
+       Checkweigherstate = 0,
+       Checkweigherspeed = 0,
+       CheckweigherspeedTemp = 0,
+       CheckweigherflagPrint = 0,
+       CheckweighersecStop = 0,
+       CheckweigherdeltaRejected = null,
+       CheckweigherONS = false,
+       CheckweighertimeStop = 60, //NOTE: Timestop
+       CheckweigherWorktime = 0.99, //NOTE: Intervalo de tiempo en minutos para actualizar el log
+       CheckweigherflagRunning = false,
+       CheckweigherRejectFlag = false,
+       CheckweigherReject,
+       CheckweigherVerify = (function(){
+         try{
+           CheckweigherReject = fs.readFileSync('CheckweigherRejected.json')
+           if(CheckweigherReject.toString().indexOf('}') > 0 && CheckweigherReject.toString().indexOf('{\"rejected\":') != -1){
+             CheckweigherReject = JSON.parse(CheckweigherReject)
+           }else{
+             throw 12121212
+           }
+         }catch(err){
+           if(err.code == 'ENOENT' || err == 12121212){
+             fs.writeFileSync('CheckweigherRejected.json','{"rejected":0}') //NOTE: Change the object to what it usually is.
+             CheckweigherReject = {
+               rejected : 0
+             }
+           }
+         }
+       })()
 var CaseFormerct = null,
     CaseFormerresults = null,
     CntInCaseFormer = null,
@@ -76,7 +118,8 @@ var CaseFormerct = null,
     CaseFormerONS = false,
     CaseFormertimeStop = 60, //NOTE: Timestop
     CaseFormerWorktime = 0.99, //NOTE: Intervalo de tiempo en minutos para actualizar el log
-    CaseFormerflagRunning = false;
+    CaseFormerflagRunning = false,
+    CaseFormerdeltaRejected= null;
 var CasePackerct = null,
     CasePackerresults = null,
     CntInCasePacker = null,
@@ -93,7 +136,8 @@ var CasePackerct = null,
     CasePackerONS = false,
     CasePackertimeStop = 60, //NOTE: Timestop
     CasePackerWorktime = 0.99, //NOTE: Intervalo de tiempo en minutos para actualizar el log
-    CasePackerflagRunning = false;
+    CasePackerflagRunning = false,
+    CasePackerdeltaRejected=null;
 
 var CntOutEOL=null,
     secEOL=0;
@@ -251,6 +295,7 @@ client1.on('connect', function(err) {
                   XrayspeedTemp = Xrayct
                   Xraysec = Date.now()
                   XraydeltaRejected = null
+                  XrayRejectFlag = false
                   Xraytime = Date.now()
                 }
                 XraysecStop = 0
@@ -268,6 +313,14 @@ client1.on('connect', function(err) {
                   XrayspeedTemp = Xrayct
                   XrayflagStopped = true
                   XrayflagRunning = false
+                  if(CntInXray - CntOutXray - XrayReject.rejected != 0 && ! XrayRejectFlag){
+                    XraydeltaRejected = CntInXray - CntOutXray - XrayReject.rejected
+                    XrayReject.rejected = CntInXray - CntOutXray
+                    fs.writeFileSync('XrayRejected.json','{"rejected": ' + XrayReject.rejected + '}')
+                    XrayRejectFlag = true
+                  }else{
+                    XraydeltaRejected = null
+                  }
                   XrayflagPrint = 1
                 }
               }
@@ -283,8 +336,9 @@ client1.on('connect', function(err) {
               }
               Xrayresults = {
                 ST: Xraystate,
-                CPQI: CntInXray,
-                CPQO: CntOutXray,
+                CPQI : CntInXray,
+                CPQO : CntOutXray,
+                CPQR : XraydeltaRejected,
                 SP: Xrayspeed
               }
               if (XrayflagPrint == 1) {
@@ -337,6 +391,7 @@ client1.on('connect', function(err) {
                   CheckweigherspeedTemp = Checkweigherct
                   Checkweighersec = Date.now()
                   CheckweigherdeltaRejected = null
+                  CheckweigherRejectFlag = false
                   Checkweighertime = Date.now()
                 }
                 CheckweighersecStop = 0
@@ -354,6 +409,14 @@ client1.on('connect', function(err) {
                   CheckweigherspeedTemp = Checkweigherct
                   CheckweigherflagStopped = true
                   CheckweigherflagRunning = false
+                  if(CntInCheckweigher - CntOutCheckweigher - CheckweigherReject.rejected != 0 && ! CheckweigherRejectFlag){
+                    CheckweigherdeltaRejected = CntInCheckweigher - CntOutCheckweigher - CheckweigherReject.rejected
+                    CheckweigherReject.rejected = CntInCheckweigher - CntOutCheckweigher
+                    fs.writeFileSync('CheckweigherRejected.json','{"rejected": ' + CheckweigherReject.rejected + '}')
+                    CheckweigherRejectFlag = true
+                  }else{
+                    CheckweigherdeltaRejected = null
+                  }
                   CheckweigherflagPrint = 1
                 }
               }
@@ -369,8 +432,9 @@ client1.on('connect', function(err) {
               }
               Checkweigherresults = {
                 ST: Checkweigherstate,
-                CPQI: CntInCheckweigher,
-                CPQO: CntOutCheckweigher,
+                CPQI : CntInCheckweigher,
+                CPQO : CntOutCheckweigher,
+                CPQR : CheckweigherdeltaRejected,
                 SP: Checkweigherspeed
               }
               if (CheckweigherflagPrint == 1) {
